@@ -5,6 +5,7 @@ Django settings for config project.
 
 import os
 from pathlib import Path
+from datetime import timedelta
 
 import dj_database_url
 from dotenv import load_dotenv
@@ -17,7 +18,7 @@ from django.core.exceptions import ImproperlyConfigured
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# Our .env file is in the project root, one level above backend.
+# Load .env from the project root (one level above backend).
 load_dotenv(BASE_DIR.parent / ".env")
 
 
@@ -34,9 +35,13 @@ if not SECRET_KEY or SECRET_KEY == "your-django-secret-key":
 
 DEBUG = os.getenv("DEBUG", "True").lower() in ("true", "1", "yes")
 
-ALLOWED_HOSTS = os.getenv(
-    "ALLOWED_HOSTS", "localhost,127.0.0.1"
-).split(",")
+ALLOWED_HOSTS = [
+    host.strip()
+    for host in os.getenv(
+        "ALLOWED_HOSTS", "localhost,127.0.0.1"
+    ).split(",")
+    if host.strip()
+]
 
 
 # --------------------------------------------------
@@ -44,6 +49,7 @@ ALLOWED_HOSTS = os.getenv(
 # --------------------------------------------------
 
 INSTALLED_APPS = [
+    # Django applications
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -65,11 +71,9 @@ INSTALLED_APPS = [
 # --------------------------------------------------
 
 MIDDLEWARE = [
+    "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
-
-    "corsheaders.middleware.CorsMiddleware",
-
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
@@ -78,8 +82,18 @@ MIDDLEWARE = [
 ]
 
 
-# Allow all origins only during local development.
-CORS_ALLOW_ALL_ORIGINS = DEBUG
+# --------------------------------------------------
+# CORS CONFIGURATION
+# --------------------------------------------------
+
+CORS_ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv(
+        "CORS_ALLOWED_ORIGINS",
+        "http://localhost:5173"
+    ).split(",")
+    if origin.strip()
+]
 
 
 # --------------------------------------------------
@@ -162,10 +176,33 @@ STATIC_URL = "static/"
 # EMAIL
 # --------------------------------------------------
 
-MAILERS = {
-    "default": {
-        "BACKEND": "django.core.mail.backends.console.EmailBackend",
-    },
+EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+
+
+# --------------------------------------------------
+# REST FRAMEWORK
+# --------------------------------------------------
+
+REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": (
+        "rest_framework_simplejwt.authentication.JWTAuthentication",
+    ),
+
+    "DEFAULT_PERMISSION_CLASSES": (
+        "rest_framework.permissions.IsAuthenticated",
+    ),
+}
+
+
+# --------------------------------------------------
+# JWT CONFIGURATION
+# --------------------------------------------------
+
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=15),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
+    "ROTATE_REFRESH_TOKENS": True,
+    "AUTH_HEADER_TYPES": ("Bearer",),
 }
 
 

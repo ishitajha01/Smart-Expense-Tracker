@@ -1,6 +1,8 @@
 
 from django.db.models import Q
+from django.utils import timezone
 from rest_framework import generics, permissions, viewsets
+from rest_framework.exceptions import ValidationError
 from rest_framework.views import APIView
 from rest_framework.response import Response
 
@@ -118,6 +120,20 @@ class DashboardSummaryView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        summary = get_dashboard_summary(request.user)
+        current = timezone.localdate()
+        month_value = request.query_params.get("month")
+        year_value = request.query_params.get("year")
+        if bool(month_value) != bool(year_value):
+            raise ValidationError({"period": "Both month and year must be supplied together."})
+
+        try:
+            month = int(month_value) if month_value else current.month
+            year = int(year_value) if year_value else current.year
+            if not 1 <= month <= 12 or not 2000 <= year <= 2100:
+                raise ValueError
+        except (TypeError, ValueError):
+            raise ValidationError({"period": "Provide a valid month and year."})
+
+        summary = get_dashboard_summary(request.user, month=month, year=year)
 
         return Response(summary)

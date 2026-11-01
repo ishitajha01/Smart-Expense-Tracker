@@ -137,3 +137,50 @@ class DashboardSummaryTests(APITestCase):
         self.assertEqual(response.data["monthly"]["income"], 0)
         self.assertEqual(response.data["monthly"]["expenses"], 0)
         self.assertEqual(response.data["category_expenses"], [])
+
+    def test_dashboard_filters_all_metrics_to_requested_month(self):
+        today = date.today()
+        previous_month = 12 if today.month == 1 else today.month - 1
+        previous_year = today.year - 1 if today.month == 1 else today.year
+        previous_date = date(previous_year, previous_month, 10)
+        Transaction.objects.create(
+            owner=self.user,
+            type=Transaction.INCOME,
+            amount=Decimal("700.00"),
+            description="Previous month income",
+            transaction_date=previous_date,
+        )
+        Transaction.objects.create(
+            owner=self.user,
+            type=Transaction.EXPENSE,
+            amount=Decimal("300.00"),
+            description="Previous month food",
+            transaction_date=previous_date,
+            category=self.food_category,
+        )
+
+        self.client.force_authenticate(user=self.user)
+        response = self.client.get(
+            "/api/dashboard/summary/",
+            {"month": previous_month, "year": previous_year},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(Decimal(str(response.data["total_income"])), Decimal("700.00"))
+        self.assertEqual(Decimal(str(response.data["total_expenses"])), Decimal("300.00"))
+        self.assertEqual(Decimal(str(response.data["balance"])), Decimal("400.00"))
+        self.assertEqual(len(response.data["category_expenses"]), 1)
+        self.assertEqual(
+            Decimal(str(response.data["category_expenses"][0]["total"])),
+            Decimal("300.00"),
+        )
+
+    def test_dashboard_rejects_invalid_month_filter(self):
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.get(
+            "/api/dashboard/summary/",
+            {"month": 13, "year": date.today().year},
+        )
+
+        self.assertEqual(response.status_code, 400)

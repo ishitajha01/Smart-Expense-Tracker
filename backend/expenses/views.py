@@ -1,9 +1,14 @@
 
 from django.db.models import Q
 from rest_framework import generics, permissions, viewsets
+from rest_framework.views import APIView
+from rest_framework.response import Response
 
-from .models import Category, Transaction
+from .dashboard import get_dashboard_summary
+
+from .models import Budget, Category, Transaction
 from .serializers import (
+    BudgetSerializer,
     CategorySerializer,
     RegisterSerializer,
     TransactionSerializer,
@@ -75,3 +80,44 @@ class TransactionViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         # Assign ownership on the server, never trust the client.
         serializer.save(owner=self.request.user)
+
+
+class BudgetViewSet(viewsets.ModelViewSet):
+    serializer_class = BudgetSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        queryset = Budget.objects.filter(
+            owner=self.request.user
+        ).select_related("category")
+
+        month = self.request.query_params.get("month")
+        year = self.request.query_params.get("year")
+        category = self.request.query_params.get("category")
+
+        if month:
+            queryset = queryset.filter(month=month)
+
+        if year:
+            queryset = queryset.filter(year=year)
+
+        if category:
+            queryset = queryset.filter(category_id=category)
+
+        return queryset
+
+    def perform_create(self, serializer):
+        serializer.save(owner=self.request.user)
+
+# --------------------------------------------------
+# DASHBOARD SUMMARY API
+# --------------------------------------------------
+
+
+class DashboardSummaryView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        summary = get_dashboard_summary(request.user)
+
+        return Response(summary)

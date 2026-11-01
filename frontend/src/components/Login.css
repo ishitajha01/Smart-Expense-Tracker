@@ -1,0 +1,117 @@
+.auth-page {
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 24px;
+    background:
+        radial-gradient(circle at 15% 15%, #34305b 0, transparent 35%),
+        radial-gradient(circle at 85% 85%, #183c39 0, transparent 35%),
+        #101323;
+}
+
+.auth-card {
+    width: 100%;
+    max-width: 440px;
+    padding: 42px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 24px;
+    background: rgba(30, 33, 54, 0.94);
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.3);
+}
+
+.auth-brand {
+    text-align: center;
+    margin-bottom: 38px;
+}
+
+.auth-logo {
+    font-size: 36px;
+}
+
+.auth-brand h1 {
+    color: #ffffff;
+    font-size: 32px;
+    margin: 8px 0 2px;
+}
+
+.auth-brand p,
+.auth-heading p {
+    color: #a5a8bd;
+    font-size: 14px;
+}
+
+.auth-heading {
+    margin-bottom: 26px;
+}
+
+.auth-heading h2 {
+    color: white;
+    font-size: 23px;
+    margin-bottom: 8px;
+}
+
+.auth-card form {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.auth-card label {
+    color: #d7d8e4;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.auth-card input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 14px 15px;
+    margin-bottom: 8px;
+    border-radius: 11px;
+    border: 1px solid #41445e;
+    background: #191c30;
+    color: white;
+    outline: none;
+}
+
+.auth-card input:focus {
+    border-color: #91c98a;
+}
+
+.auth-card form>button {
+    padding: 15px;
+    margin-top: 10px;
+    border: none;
+    border-radius: 11px;
+    background: #91c98a;
+    color: #17251b;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.auth-card form>button:disabled {
+    opacity: 0.6;
+    cursor: wait;
+}
+
+.auth-error {
+    color: #ff9999;
+    font-size: 13px;
+}
+
+.auth-switch {
+    color: #a5a8bd;
+    text-align: center;
+    margin-top: 25px;
+    font-size: 14px;
+}
+
+.auth-switch button {
+    border: none;
+    background: none;
+    color: #a8dca0;
+    cursor: pointer;
+    font-weight: 600;
+    margin-left: 5px;
+}

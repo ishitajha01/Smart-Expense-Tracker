@@ -13,6 +13,7 @@ export const loginUser = async (credentials) => {
 
     localStorage.setItem("access_token", response.data.access);
     localStorage.setItem("refresh_token", response.data.refresh);
+    localStorage.setItem("username", credentials.username);
 
     return response.data;
 };
@@ -21,5 +22,6 @@ export const loginUser = async (credentials) => {
 export const logoutUser = () => {
     localStorage.removeItem("access_token");
     localStorage.removeItem("refresh_token");
+    localStorage.removeItem("username");
     window.dispatchEvent(new Event("auth:logout"));
 };

@@ -44,6 +44,7 @@ api.interceptors.response.use(
             if (!refreshToken) {
                 localStorage.removeItem("access_token");
                 localStorage.removeItem("refresh_token");
+                localStorage.removeItem("username");
                 window.dispatchEvent(new Event("auth:logout"));
                 return Promise.reject(error);
             }
@@ -64,6 +65,7 @@ api.interceptors.response.use(
             } catch (refreshError) {
                 localStorage.removeItem("access_token");
                 localStorage.removeItem("refresh_token");
+                localStorage.removeItem("username");
                 window.dispatchEvent(new Event("auth:logout"));
 
                 return Promise.reject(refreshError);

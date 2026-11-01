@@ -439,7 +439,8 @@
   color: #aaa5bc;
 }
 
-.period-select select {
+.period-select select,
+.period-select input {
   appearance: none;
   color: #e6e1f3;
   background: transparent;
@@ -448,6 +449,8 @@
   font-size: 10px;
   cursor: pointer;
 }
+
+.period-select input { color-scheme: dark; }
 
 .period-select option {
   background: #211d34;
@@ -956,6 +959,39 @@
   color: #e9e3f3;
 }
 
+.row-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 34px;
+  min-height: 32px;
+  padding: 0 8px;
+  border: 1px solid #39334d;
+  border-radius: 7px;
+  background: transparent;
+  color: #bcb5ce;
+  font-size: 10px;
+}
+
+.row-action:hover { background: #2a2540; color: white; }
+.danger-action { color: #f08b9b; }
+.management-actions { display: flex; justify-content: flex-end; gap: 7px; margin-top: 8px; }
+.management-panel { padding: 22px; }
+.management-list { display: flex; flex-direction: column; margin-top: 12px; }
+.management-row { display: flex; align-items: center; gap: 12px; min-height: 54px; border-bottom: 1px solid var(--border); color: var(--text); }
+.management-row > strong { flex: 1; font-size: 12px; }
+.management-row > span:not(.category-swatch) { color: var(--muted); font-size: 10px; }
+.category-swatch { width: 10px; height: 10px; border-radius: 50%; }
+.loading-state { padding: 32px; color: var(--muted); }
+.setting-control { display: flex; justify-content: space-between; gap: 20px; max-width: 480px; padding: 16px 0; border-bottom: 1px solid var(--border); font-size: 12px; }
+.setting-control span { color: var(--muted); }
+.setting-logout { max-width: 150px; margin-top: 20px; }
+.help-content { max-width: 720px; color: #c6c0d4; line-height: 1.65; }
+.help-content h3 { margin: 22px 0 4px; color: var(--text); font-size: 14px; }
+.help-content p { margin: 0; color: var(--muted); font-size: 12px; }
+.assistant-page { min-height: 420px; display: flex; flex-direction: column; }
+.assistant-page .chat-messages { min-height: 200px; }
+
 .row-more {
   flex-shrink: 0;
 }
@@ -1438,6 +1474,9 @@
   margin-bottom: 20px;
 }
 
+.type-toggle label { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 37px; border-radius: 7px; color: #c8c2d5; font-size: 11px; cursor: pointer; }
+.type-toggle input { accent-color: #91d5a3; }
+
 .type-toggle button {
   height: 37px;
   border: 1px solid transparent;
@@ -1495,6 +1534,8 @@
   color: #726d84;
 }
 
+.form-error { margin: 0 0 16px; color: #f08b9b; font-size: 11px; line-height: 1.5; }
+
 .form-label select option {
   background: #201c32;
 }
@@ -1524,7 +1565,11 @@
 
 .mobile-overlay {
   display: none;
+  padding: 0;
+  border: 0;
 }
+
+.search-box > button { display: grid; place-items: center; padding: 3px; border: 0; background: transparent; color: var(--muted); }
 
 /* RESPONSIVE DESIGN */
 

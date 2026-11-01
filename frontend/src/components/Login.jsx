@@ -1,6 +1,7 @@
 
 import { useState } from "react";
-import { useAuth } from "../context/AuthContext";
+import { useAuth } from "../context/useAuth";
+import { registerUser } from "../api/auth";
 import "./Login.css";
 
 export default function Login() {
@@ -20,8 +21,6 @@ export default function Login() {
 
         try {
             if (isRegistering) {
-                const { registerUser } = await import("../api/auth");
-
                 await registerUser({
                     username,
                     email,

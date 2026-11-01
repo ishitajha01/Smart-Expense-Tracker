@@ -1821,3 +1821,34 @@
 .logout-button svg {
   flex-shrink: 0;
 }
+
+.topbar-logout {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 0 12px;
+  border: 1px solid rgba(240, 139, 155, 0.2);
+  border-radius: 10px;
+  background: rgba(240, 139, 155, 0.06);
+  color: #f08b9b;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.topbar-logout:hover {
+  background: rgba(240, 139, 155, 0.13);
+}
+
+@media (max-width: 560px) {
+  .topbar-logout {
+    width: 38px;
+    padding: 0;
+  }
+
+  .topbar-logout span {
+    display: none;
+  }
+}

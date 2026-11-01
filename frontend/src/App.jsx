@@ -1,4 +1,5 @@
 import { getDashboardSummary } from "./api/dashboard";
+import { createTransaction, getBudgets, getCategories, getTransactions } from "./api/finance";
 import { useEffect, useState } from "react";
 import { useAuth } from "./context/AuthContext";
 import Login from "./components/Login";
@@ -25,38 +26,15 @@ const navigation = [
 ];
 
 
-const initialTransactions = [
-  { id: 1, name: "Grocery shopping", category: "Food & Dining", date: "Today, 10:42 AM", amount: 1250, type: "expense", icon: Utensils, color: "orange" },
-  { id: 2, name: "Monthly salary", category: "Salary", date: "Today, 9:15 AM", amount: 35000, type: "income", icon: Wallet, color: "green" },
-  { id: 3, name: "Uber ride", category: "Transport", date: "Yesterday, 7:30 PM", amount: 340, type: "expense", icon: CarFront, color: "blue" },
-  { id: 4, name: "New headphones", category: "Shopping", date: "Yesterday, 2:20 PM", amount: 2499, type: "expense", icon: ShoppingBag, color: "purple" },
-  { id: 5, name: "Coffee with friends", category: "Food & Dining", date: "Oct 29, 5:10 PM", amount: 420, type: "expense", icon: Coffee, color: "orange" },
-  { id: 6, name: "Rent & utilities", category: "Housing", date: "Oct 28, 11:00 AM", amount: 7941, type: "expense", icon: House, color: "purple" },
-];
-
-
-const spendingData = [
-  { name: "Food & Dining", value: 4200, color: "#A78BFA", icon: Utensils },
-  { name: "Shopping", value: 3100, color: "#F5A36C", icon: ShoppingBag },
-  { name: "Transport", value: 1850, color: "#64B5D9", icon: CarFront },
-  { name: "Health", value: 1200, color: "#E88CB6", icon: HeartPulse },
-  { name: "Others", value: 2100, color: "#83C99A", icon: House },
-];
-
-const monthlyData = [
-  { month: "Jun", income: 28000, expenses: 18500 },
-  { month: "Jul", income: 32000, expenses: 21000 },
-  { month: "Aug", income: 30000, expenses: 16500 },
-  { month: "Sep", income: 35000, expenses: 23000 },
-  { month: "Oct", income: 35000, expenses: 19000 },
-  { month: "Nov", income: 35000, expenses: 12450 },
-];
-
-const budgets = [
-  { name: "Food & Dining", spent: 4200, limit: 6000, color: "#A78BFA", icon: Utensils },
-  { name: "Shopping", spent: 3100, limit: 4000, color: "#F5A36C", icon: ShoppingBag },
-  { name: "Transport", spent: 1850, limit: 3000, color: "#64B5D9", icon: CarFront },
-];
+const categoryStyle = (name = "") => {
+  const normalized = name.toLowerCase();
+  if (normalized.includes("transport")) return { icon: CarFront, color: "blue", chartColor: "#64B5D9" };
+  if (normalized.includes("shop")) return { icon: ShoppingBag, color: "purple", chartColor: "#F5A36C" };
+  if (normalized.includes("health")) return { icon: HeartPulse, color: "pink", chartColor: "#E88CB6" };
+  if (normalized.includes("house") || normalized.includes("rent")) return { icon: House, color: "purple", chartColor: "#83C99A" };
+  if (normalized.includes("salary") || normalized.includes("income")) return { icon: Wallet, color: "green", chartColor: "#8CCF9F" };
+  return { icon: Utensils, color: "orange", chartColor: "#A78BFA" };
+};
 
 const money = (amount) =>
   new Intl.NumberFormat("en-IN", {
@@ -79,11 +57,12 @@ function SectionTitle({ title, subtitle, action }) {
 
 function App() {
   const { isAuthenticated, logout } = useAuth();
-  if (!isAuthenticated) {
-    return <Login />;
-  }
   const [activePage, setActivePage] = useState("Overview");
-  const [transactions, setTransactions] = useState(initialTransactions);
+  const [transactions, setTransactions] = useState([]);
+  const [budgets, setBudgets] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [dataError, setDataError] = useState("");
+  const [savingTransaction, setSavingTransaction] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [showAI, setShowAI] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -95,33 +74,57 @@ function App() {
     { role: "assistant", text: "Hey there! I'm Sprout, your little money companion. 🌱 I'm here to help your finances grow. What would you like to explore?" }
   ]);
   const [form, setForm] = useState({
-    name: "", amount: "", category: "Food & Dining", type: "expense"
+    name: "", amount: "", category: "", type: "expense"
   });
   const [dashboardSummary, setDashboardSummary] = useState(null);
   const [summaryError, setSummaryError] = useState("");
 
   useEffect(() => {
     if (!isAuthenticated) return;
-
-    const fetchDashboardSummary = async () => {
-      try {
-        const data = await getDashboardSummary();
-        setDashboardSummary(data);
+    let active = true;
+    const [monthName, year] = period.split(" ");
+    const month = new Date(`${monthName} 1, ${year}`).getMonth() + 1;
+    Promise.all([getDashboardSummary(), getTransactions(), getBudgets(month, Number(year)), getCategories()])
+      .then(([summary, transactionData, budgetData, categoryData]) => {
+        if (!active) return;
+        setDashboardSummary(summary);
+        setTransactions((Array.isArray(transactionData) ? transactionData : transactionData.results || []).map((item) => {
+          const category = categoryData.find((entry) => entry.id === item.category)?.name || "Uncategorized";
+          const style = categoryStyle(category);
+          return { id: item.id, name: item.description, category, dateKey: item.transaction_date, date: new Date(`${item.transaction_date}T00:00:00`).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }), amount: Number(item.amount), type: item.type, ...style };
+        }));
+        setBudgets((Array.isArray(budgetData) ? budgetData : budgetData.results || []).map((item) => ({ ...item, name: item.category_name, spent: Number(item.spent), limit: Number(item.amount), ...categoryStyle(item.category_name) })));
+        setCategories(categoryData);
+        setForm((previous) => ({ ...previous, category: previous.category || String(categoryData[0]?.id || "") }));
         setSummaryError("");
-      } catch (error) {
-        console.error("Dashboard summary error:", error);
-        setSummaryError("Couldn't load your financial summary.");
-      }
-    };
+        setDataError("");
+      })
+      .catch((error) => {
+        console.error("Finance data error:", error);
+        if (active) setDataError("Couldn't load your transactions or budgets. Check that the backend is running and try again.");
+      });
+    return () => { active = false; };
+  }, [isAuthenticated, period]);
 
-    fetchDashboardSummary();
-  }, [isAuthenticated]);
+  if (!isAuthenticated) return <Login />;
 
   const totals = {
     income: Number(dashboardSummary?.total_income ?? 0),
     expenses: Number(dashboardSummary?.total_expenses ?? 0),
     savings: Number(dashboardSummary?.total_income ?? 0) - Number(dashboardSummary?.total_expenses ?? 0),
   };
+  const monthlyData = Array.from({ length: 6 }, (_, index) => {
+    const date = new Date();
+    date.setDate(1);
+    date.setMonth(date.getMonth() - (5 - index));
+    const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+    const monthTransactions = transactions.filter((transaction) => transaction.dateKey?.startsWith(key));
+    return {
+      month: date.toLocaleDateString("en-IN", { month: "short" }),
+      income: monthTransactions.filter((transaction) => transaction.type === "income").reduce((sum, item) => sum + item.amount, 0),
+      expenses: monthTransactions.filter((transaction) => transaction.type === "expense").reduce((sum, item) => sum + item.amount, 0),
+    };
+  });
 
   const filteredTransactions = transactions.filter((transaction) => {
     const matchesSearch = `${transaction.name} ${transaction.category}`
@@ -129,29 +132,31 @@ function App() {
     const matchesFilter = filter === "All" || transaction.type === filter.toLowerCase();
     return matchesSearch && matchesFilter;
   });
+  const spendingData = (dashboardSummary?.category_expenses || []).map((item) => ({
+    name: item.category || "Uncategorized", value: Number(item.total), color: categoryStyle(item.category).chartColor,
+  }));
 
-  const addTransaction = (event) => {
+  const addTransaction = async (event) => {
     event.preventDefault();
     if (!form.name.trim() || !form.amount || Number(form.amount) <= 0) return;
-
-    const newTransaction = {
-      id: Date.now(),
-      name: form.name,
-      category: form.category,
-      date: "Just now",
-      amount: Number(form.amount),
-      type: form.type,
-      icon: form.category === "Transport" ? CarFront :
-        form.category === "Shopping" ? ShoppingBag :
-          form.category === "Health" ? HeartPulse :
-            form.category === "Housing" ? House : Utensils,
-      color: form.type === "income" ? "green" :
-        form.category === "Shopping" ? "purple" : "orange",
-    };
-
-    setTransactions((previous) => [newTransaction, ...previous]);
-    setForm({ name: "", amount: "", category: "Food & Dining", type: "expense" });
-    setShowModal(false);
+    setSavingTransaction(true);
+    try {
+      const today = new Date();
+      const transactionDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+      await createTransaction({ description: form.name.trim(), amount: form.amount, type: form.type, category: form.category ? Number(form.category) : null, transaction_date: transactionDate });
+      const [transactionData, summary, budgetData] = await Promise.all([getTransactions(), getDashboardSummary(), getBudgets(new Date(`${period.split(" ")[0]} 1, ${period.split(" ")[1]}`).getMonth() + 1, Number(period.split(" ")[1]))]);
+      setDashboardSummary(summary);
+      setBudgets((Array.isArray(budgetData) ? budgetData : budgetData.results || []).map((item) => ({ ...item, name: item.category_name, spent: Number(item.spent), limit: Number(item.amount), ...categoryStyle(item.category_name) })));
+      setTransactions((Array.isArray(transactionData) ? transactionData : transactionData.results || []).map((item) => {
+        const category = categories.find((entry) => entry.id === item.category)?.name || "Uncategorized";
+        return { id: item.id, name: item.description, category, dateKey: item.transaction_date, date: new Date(`${item.transaction_date}T00:00:00`).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }), amount: Number(item.amount), type: item.type, ...categoryStyle(category) };
+      }));
+      setForm({ name: "", amount: "", category: String(categories[0]?.id || ""), type: "expense" });
+      setShowModal(false);
+      setDataError("");
+    } catch (error) {
+      setDataError(error.response?.data ? Object.values(error.response.data).flat().join(" ") : "Couldn't save the transaction. Please try again.");
+    } finally { setSavingTransaction(false); }
   };
 
   const sendMessage = (event) => {
@@ -257,7 +262,7 @@ function App() {
             <button className="icon-button notification-button" aria-label="Notifications">
               <Bell size={19} /><i />
             </button>
-            <div className="topbar-profile"><div className="profile-avatar small">I</div><ChevronDown size={14} /></div>
+            <button className="topbar-logout" type="button" onClick={logout}><LogOut size={16} /><span>Log out</span></button>
           </div>
         </header>
 
@@ -283,9 +288,9 @@ function App() {
               </button>
             </div>
           </div>
-          {summaryError && <div className="page-notice">{summaryError}</div>}
+          {(summaryError || dataError) && <div className="page-notice">{summaryError || dataError}</div>}
 
-          {activePage !== "Overview" && activePage !== "AI Assistant" && activePage !== "Settings" && (
+          {activePage !== "Overview" && activePage !== "AI Assistant" && activePage !== "Settings" && activePage !== "Transactions" && activePage !== "Budgets" && (
             <div className="page-notice">
               <Sparkles size={18} />
               <span>This is the Sprout {activePage} workspace preview. The full feature will be connected in the next development stages.</span>
@@ -320,7 +325,7 @@ function App() {
 
             <article className="summary-card savings-card">
               <div className="card-topline"><span>Net savings</span><div className="metric-icon"><PiggyBank size={18} /></div></div>
-              <div className="metric-value">{money(Number(dashboardSummary?.net_savings ?? 0))}</div>
+              <div className="metric-value">{money(totals.savings)}</div>
               <div className="metric-bottom"><span className="trend positive"><TrendingUp size={14} /> Growing</span><span>this month</span></div>
               <div className="savings-decoration"><Sprout size={54} /></div>
             </article>
@@ -378,7 +383,7 @@ function App() {
                 {spendingData.map((item) => (
                   <div className="category-row" key={item.name}>
                     <span className="category-name"><i style={{ background: item.color }} />{item.name}</span>
-                    <strong>{money(Number(dashboardSummary?.total_expenses ?? 0))}</strong>
+                    <strong>{money(item.value)}</strong>
                   </div>
                 ))}
               </div>
@@ -420,14 +425,14 @@ function App() {
               <div className="budget-list">
                 {budgets.map((budget) => {
                   const Icon = budget.icon;
-                  const percentage = Math.min(100, Math.round((budget.spent / budget.limit) * 100));
+                  const percentage = budget.limit > 0 ? Math.round((budget.spent / budget.limit) * 100) : 0;
                   return (
                     <div className="budget-item" key={budget.name}>
                       <div className="budget-heading">
                         <div className="budget-name"><span className="budget-icon" style={{ color: budget.color }}><Icon size={16} /></span><strong>{budget.name}</strong></div>
                         <span>{percentage}%</span>
                       </div>
-                      <div className="progress-track"><div style={{ width: `${percentage}%`, background: budget.color }} /></div>
+                      <div className="progress-track"><div style={{ width: `${Math.min(100, percentage)}%`, background: budget.chartColor }} /></div>
                       <div className="budget-foot"><span>{money(budget.spent)} spent</span><span>of {money(budget.limit)}</span></div>
                     </div>
                   );
@@ -484,8 +489,8 @@ function App() {
             </div>
             <label className="form-label">Description<input autoFocus required placeholder="What was it for?" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></label>
             <label className="form-label">Amount (₹)<input required type="number" min="1" step="0.01" placeholder="0.00" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} /></label>
-            <label className="form-label">Category<select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}><option>Food & Dining</option><option>Shopping</option><option>Transport</option><option>Health</option><option>Housing</option><option>Salary</option><option>Others</option></select></label>
-            <div className="modal-actions"><button type="button" className="cancel-button" onClick={() => setShowModal(false)}>Cancel</button><button type="submit" className="primary-button"><Check size={16} /> Save transaction</button></div>
+            <label className="form-label">Category<select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}><option value="">Uncategorized</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
+            <div className="modal-actions"><button type="button" className="cancel-button" onClick={() => setShowModal(false)}>Cancel</button><button type="submit" className="primary-button" disabled={savingTransaction}><Check size={16} /> {savingTransaction ? "Saving…" : "Save transaction"}</button></div>
           </form>
         </div>
       )}

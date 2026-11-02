@@ -63,6 +63,7 @@ INSTALLED_APPS = [
 
     # Our applications
     "expenses",
+    "ai_assistant",
 ]
 
 
@@ -90,7 +91,7 @@ CORS_ALLOWED_ORIGINS = [
     origin.strip()
     for origin in os.getenv(
         "CORS_ALLOWED_ORIGINS",
-        "http://localhost:5173"
+        "http://localhost:5173,http://127.0.0.1:5173"
     ).split(",")
     if origin.strip()
 ]
@@ -191,6 +192,7 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": (
         "rest_framework.permissions.IsAuthenticated",
     ),
+    "DEFAULT_THROTTLE_RATES": {"ai_chat": "20/hour"},
 }
 
 

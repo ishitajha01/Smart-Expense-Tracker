@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Area, AreaChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer,
   Tooltip, XAxis, YAxis,
@@ -6,7 +6,7 @@ import {
 import {
   AlertTriangle, ArrowDownRight, ArrowLeftRight, ArrowUpRight, Bell, CalendarDays, ChartNoAxesCombined,
   ChevronRight, CircleHelp, LayoutDashboard, LogOut, Menu, Plus, Search, Send,
-  Settings, Sparkles, Sprout, Tags, Target, Trash2, Wallet, X,
+  Settings, Sparkles, Sprout, Tags, Target, Trash2, Wallet, X, Mic,
 } from "lucide-react";
 import { getDashboardSummary } from "./api/dashboard";
 import {
@@ -15,6 +15,7 @@ import {
   updateCategory, updateTransaction,
 } from "./api/finance";
 import { useAuth } from "./context/useAuth";
+import { createAssistantConversation, getAssistantConversation, getAssistantConversations, sendAssistantMessage } from "./api/assistant";
 import Login from "./components/Login";
 import "./App.css";
 
@@ -65,6 +66,15 @@ function FinanceWorkspace() {
   const [saving, setSaving] = useState(false);
   const [messages, setMessages] = useState([]);
   const [chatInput, setChatInput] = useState("");
+  const [conversationId, setConversationId] = useState(null);
+  const [conversations, setConversations] = useState([]);
+  const [chatLoading, setChatLoading] = useState(false);
+  const [chatError, setChatError] = useState("");
+  const [listening, setListening] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const voiceSupported = typeof window !== "undefined" && Boolean(window.SpeechRecognition || window.webkitSpeechRecognition);
+  const [voiceError, setVoiceError] = useState("");
+  const speechRecognition = useRef(null);
   const [captureText, setCaptureText] = useState("");
 
   const refresh = useCallback(async () => {
@@ -103,6 +113,30 @@ function FinanceWorkspace() {
     window.addEventListener("keydown", closeOnEscape);
     return () => window.removeEventListener("keydown", closeOnEscape);
   }, [notificationsOpen]);
+
+  useEffect(() => {
+    return () => speechRecognition.current?.abort();
+  }, []);
+
+  useEffect(() => {
+    if (!listening) return undefined;
+    const timer = window.setInterval(() => setRecordingSeconds((seconds) => seconds + 1), 1000);
+    return () => window.clearInterval(timer);
+  }, [listening]);
+
+  useEffect(() => {
+    if (activePage !== "AI Assistant") return;
+    let current = true;
+    getAssistantConversations().then(async (items) => {
+      if (current) setConversations(items);
+      if (!current || !items.length) return;
+      const latest = await getAssistantConversation(items[0].id);
+      if (!current) return;
+      setConversationId(latest.id);
+      setMessages(latest.messages || []);
+    }).catch(() => { /* A new conversation remains available if history cannot load. */ });
+    return () => { current = false; };
+  }, [activePage]);
 
   const categoriesById = useMemo(() => new Map(categories.map((category) => [category.id, category.name])), [categories]);
   const filteredTransactions = useMemo(() => transactions.filter((item) => {
@@ -242,25 +276,85 @@ function FinanceWorkspace() {
     if (window.confirm(`Delete this ${label}?${detail}`)) runAction(action);
   };
 
-  const sendMessage = (event) => {
+  const sendMessage = async (event) => {
     event.preventDefault();
     const question = chatInput.trim();
-    if (!question) return;
-    const lowered = question.toLowerCase();
-    const expenses = Number(summary?.total_expenses || 0);
-    const income = Number(summary?.total_income || 0);
-    const topCategory = spendingData.slice().sort((a, b) => b.value - a.value)[0];
-    const periodLabel = `${monthNames[Number(selectedMonth.slice(5)) - 1]} ${selectedMonth.slice(0, 4)}`;
-    let answer = `For ${periodLabel}, you have ${transactions.filter((item) => item.transaction_date.startsWith(selectedMonth)).length} transactions recorded. Income is ${money(income)} and expenses are ${money(expenses)}.`;
-    if (lowered.includes("spend") || lowered.includes("category")) {
-      answer = topCategory ? `Your largest spending category is ${topCategory.name} at ${money(topCategory.value)} across your recorded transactions.` : "There aren't any expenses recorded yet. Add a transaction and I can summarize your spending.";
-    } else if (lowered.includes("save") || lowered.includes("balance")) {
-      answer = `Your current recorded balance is ${money(income - expenses)}. ${income > 0 ? `You've kept ${Math.max(0, Math.round((income - expenses) / income * 100))}% of your recorded income.` : "Record income and expenses to see your savings rate."}`;
-    } else if (lowered.includes("budget")) {
-      answer = budgets.length ? `You have ${budgets.length} budgets for the selected month. ${budgets.filter((budget) => Number(budget.spent) > Number(budget.amount)).length} are over their limit.` : "There are no budgets for the selected month yet. Create one from the Budgets page.";
-    }
-    setMessages((previous) => [...previous, { role: "user", text: question }, { role: "assistant", text: answer }]);
+    if (!question || chatLoading) return;
     setChatInput("");
+    setChatError("");
+    setChatLoading(true);
+    setMessages((previous) => [...previous, { role: "user", content: question, pending: true }]);
+    try {
+      const response = await sendAssistantMessage(question, conversationId, Number(selectedMonth.slice(5)), Number(selectedMonth.slice(0, 4)));
+      setConversationId(response.conversation_id);
+      setMessages((previous) => [...previous.filter((message) => !message.pending), response.user_message, response.message]);
+      getAssistantConversations().then(setConversations).catch(() => {});
+    } catch (cause) {
+      setMessages((previous) => previous.filter((message) => !message.pending));
+      setChatInput(question);
+      const detail = cause.response?.data?.detail;
+      const statusMessage = cause.response?.status
+        ? `The backend returned HTTP ${cause.response.status}${detail ? `: ${detail}` : ". Check the Django terminal for the error details."}`
+        : "The browser couldn't reach the backend. Check that Django is running and that this page is opened from localhost:5173 or 127.0.0.1:5173.";
+      console.error("Sprout AI request failed", { status: cause.response?.status, detail, code: cause.code });
+      setChatError(detail || statusMessage);
+    } finally {
+      setChatLoading(false);
+    }
+  };
+
+  const startNewConversation = async () => {
+    try {
+      const conversation = await createAssistantConversation();
+      setConversationId(conversation.id);
+      setMessages([]);
+      setConversations((previous) => [conversation, ...previous]);
+      setChatError("");
+    } catch (cause) {
+      setChatError(cause.response?.data?.detail || "Couldn't start a new conversation.");
+    }
+  };
+
+  const openConversation = async (id) => {
+    if (!id) return;
+    try {
+      const conversation = await getAssistantConversation(id);
+      setConversationId(conversation.id);
+      setMessages(conversation.messages || []);
+      setChatError("");
+    } catch (cause) {
+      setChatError(cause.response?.data?.detail || "Couldn't load that conversation.");
+    }
+  };
+
+  const toggleVoice = () => {
+    const Recognition = typeof window !== "undefined" && (window.SpeechRecognition || window.webkitSpeechRecognition);
+    if (!Recognition) return;
+    setVoiceError("");
+    if (listening) { speechRecognition.current?.stop(); setListening(false); return; }
+    const recognition = new Recognition();
+    recognition.lang = "en-IN";
+    recognition.interimResults = true;
+    recognition.continuous = false;
+    recognition.onresult = (event) => {
+      setChatInput(Array.from(event.results).map((result) => result[0].transcript).join(""));
+      setVoiceError("");
+    };
+    recognition.onerror = (event) => {
+      setListening(false);
+      setVoiceError(event.error === "not-allowed" ? "Allow microphone access in your browser to use voice input." : "Voice capture didn’t work. You can type your message or try again.");
+    };
+    recognition.onend = () => setListening(false);
+    speechRecognition.current = recognition;
+    try { setRecordingSeconds(0); recognition.start(); setListening(true); }
+    catch { setVoiceError("Voice capture is already active. Stop it before starting again."); }
+  };
+
+  const cancelVoice = () => {
+    speechRecognition.current?.abort();
+    setListening(false);
+    setChatInput("");
+    setVoiceError("");
   };
 
   const pageTitle = activePage === "Overview" ? "Your financial garden" : activePage;
@@ -335,7 +429,7 @@ function FinanceWorkspace() {
             {activePage === "Analytics" && <section className="main-grid"><article className="panel chart-panel"><SectionTitle title="Income vs. expenses" subtitle={`Daily totals · ${monthNames[Number(selectedMonth.slice(5)) - 1]} ${selectedMonth.slice(0, 4)}`} />{dailyData.length ? <FinanceChart data={dailyData} money={money} /> : <EmptyState text="No transactions in this month." />}</article><article className="panel spending-panel"><SectionTitle title="Expense categories" subtitle="Selected month" /><SpendingChart data={spendingData} money={money} /><div className="category-legend">{spendingData.map((item) => <div className="category-row" key={item.name}><span className="category-name"><i style={{ background: item.color }} />{item.name}</span><strong>{money(item.value)}</strong></div>)}{!spendingData.length && <EmptyState text="No expenses recorded in this month." />}</div></article></section>}
             {activePage === "Settings" && <section className="panel management-panel"><SectionTitle title="Account and alerts" subtitle="Adjust how Sprout flags approaching budget limits." /><div className="setting-control"><strong>Signed in as</strong><span>{localStorage.getItem("username") || "Your account"}</span></div><div className="setting-control"><strong>Display currency</strong><span>Indian Rupee (INR)</span></div><label className="alert-preference"><span><strong>Approaching-budget warning</strong><small>Show amber warnings starting at this percentage.</small></span><select value={alertThreshold} onChange={(event) => { const value = Number(event.target.value); setAlertThreshold(value); localStorage.setItem(alertPreferenceKey, String(value)); }}><option value="60">60%</option><option value="70">70%</option><option value="80">80%</option><option value="90">90%</option></select></label><label className="alert-preference"><span><strong>In-app budget notifications</strong><small>Show near-limit and overspending alerts in the top bar.</small></span><input type="checkbox" checked={notificationsEnabled} onChange={(event) => { setNotificationsEnabled(event.target.checked); localStorage.setItem(notificationPreferenceKey, String(event.target.checked)); }} /></label><button className="logout-button setting-logout" onClick={logout}><LogOut size={17} /> Log out</button></section>}
             {activePage === "Help" && <section className="panel management-panel"><SectionTitle title="Help & support" subtitle="How to use your Sprout finance tracker." /><div className="help-content"><h3>Record an expense or income</h3><p>Use Add transaction to save a description, amount, date, and optional category. Your totals and charts update from saved records.</p><h3>Set a budget</h3><p>Open Budgets, choose a category and month, and enter a spending limit. Sprout calculates spending from matching expense transactions.</p><h3>Manage your data</h3><p>Use the Transactions and Categories pages to edit or delete your own records. Default categories are shared and cannot be renamed or deleted.</p><h3>Sign out</h3><p>Use Log out in the sidebar or top bar to clear this browser's sign-in session.</p></div></section>}
-            {activePage === "AI Assistant" && <section className="panel assistant-page"><SectionTitle title="Money assistant" subtitle="Answers are calculated from your saved Sprout account data." /><form className="capture-form" onSubmit={extractCandidate}><label className="form-label">Quick transaction capture<input value={captureText} onChange={(event) => setCaptureText(event.target.value)} placeholder="e.g. Spent 450 on Food today" /></label><button className="primary-button" type="submit">Review details</button><span>Local parser · review and confirm before saving</span></form><div className="chat-messages">{messages.length ? messages.map((message, index) => <div className={`chat-message ${message.role}`} key={index}>{message.text}</div>) : <div className="empty-state">Ask about your recorded spending, savings, or budgets.</div>}</div><div className="suggestion-chips"><button onClick={() => setChatInput("How am I spending?")}>My spending</button><button onClick={() => setChatInput("How can I save more?")}>Savings</button><button onClick={() => setChatInput("How are my budgets?")}>Budgets</button></div><form className="chat-input" onSubmit={sendMessage}><input value={chatInput} onChange={(event) => setChatInput(event.target.value)} placeholder="Ask about your money…" /><button type="submit" aria-label="Send message"><Send size={17} /></button></form></section>}
+            {activePage === "AI Assistant" && <section className="panel assistant-page"><SectionTitle title="Money assistant" subtitle="Sprout AI answers with figures from your saved account data." action={<div className="assistant-actions"><select aria-label="Conversation history" value={conversationId || ""} onChange={(event) => openConversation(Number(event.target.value))}><option value="">Conversation history</option>{conversations.map((conversation) => <option key={conversation.id} value={conversation.id}>{conversation.title}</option>)}</select><button className="text-action" onClick={startNewConversation}>New conversation</button></div>} /><form className="capture-form" onSubmit={extractCandidate}><label className="form-label">Quick transaction capture<input value={captureText} onChange={(event) => setCaptureText(event.target.value)} placeholder="e.g. Spent 450 on Food today" /></label><button className="primary-button" type="submit">Review details</button><span>Review the details before saving</span></form><div className="chat-messages" aria-live="polite">{messages.length ? messages.map((message) => <div className={`chat-message ${message.role}`} key={message.id || `${message.role}-${message.content}`}><span>{message.content}</span></div>) : <div className="empty-state">Ask about your recorded spending, savings, or budgets.</div>}{chatLoading && <div className="chat-message assistant">Sprout is thinking…</div>}</div><div className="suggestion-chips"><button type="button" onClick={() => setChatInput("Analyse my spending this month.")}>My spending</button><button type="button" onClick={() => setChatInput("How can I save more?")}>Savings</button><button type="button" onClick={() => setChatInput("How are my budgets? ")}>Budgets</button></div>{voiceError && <p className="form-error" role="alert">{voiceError}</p>}{!voiceSupported && <p className="form-hint">Voice input isn’t supported in this browser. You can type your message instead.</p>}{chatError && <p className="form-error" role="alert">{chatError}</p>}<form className="chat-input" onSubmit={sendMessage}><input value={chatInput} onChange={(event) => setChatInput(event.target.value)} placeholder={listening ? `Listening · ${String(Math.floor(recordingSeconds / 60)).padStart(2, "0")}:${String(recordingSeconds % 60).padStart(2, "0")} · edit before sending` : "Ask about your money…"} aria-label="Message Sprout AI" />{listening && <button type="button" onClick={cancelVoice} aria-label="Cancel recording"><X size={16} /></button>}<button type="button" className={listening ? "recording" : ""} onClick={toggleVoice} aria-label={listening ? "Stop voice recording" : "Start voice recording"} disabled={!voiceSupported}><Mic size={17} /></button><button type="submit" aria-label="Send message" disabled={chatLoading || !chatInput.trim()}><Send size={17} /></button></form></section>}
           </>}
           <footer className="app-footer"><span>© {today.getFullYear()} Sprout</span><span>Your financial data, clearly presented.</span></footer>
         </div>

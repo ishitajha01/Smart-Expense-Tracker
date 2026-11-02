@@ -1027,6 +1027,17 @@
 .assistant-page { min-height: 420px; display: flex; flex-direction: column; }
 .assistant-page .chat-messages { min-height: 200px; }
 
+.assistant-actions { display: flex; align-items: center; gap: 10px; }
+.assistant-actions select {
+  max-width: 180px;
+  border: 1px solid #413952;
+  border-radius: 8px;
+  padding: 7px 9px;
+  background: #151324;
+  color: #d9d2e9;
+  font-size: 10px;
+}
+
 .row-more {
   flex-shrink: 0;
 }
@@ -1477,6 +1488,21 @@
   border-radius: 8px;
   display: grid;
   place-items: center;
+}
+
+.chat-input button.recording {
+  background: #b94755;
+  color: #fff;
+  animation: voice-pulse 1.6s ease-in-out infinite;
+}
+
+.chat-input button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+@keyframes voice-pulse {
+  50% { box-shadow: 0 0 0 5px rgb(185 71 85 / 18%); }
 }
 
 .ai-disclaimer {

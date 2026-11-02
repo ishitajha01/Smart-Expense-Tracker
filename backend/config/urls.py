@@ -16,9 +16,22 @@ Including another URLconf
 """
 
 from django.contrib import admin
+from django.http import JsonResponse
 from django.urls import path, include
 
+
+def api_home(request):
+    """Give the backend's root URL a useful, lightweight status response."""
+    return JsonResponse(
+        {
+            "service": "Sprout API",
+            "status": "running",
+            "message": "The backend is available. Use the /api/ endpoints.",
+        }
+    )
+
 urlpatterns = [
+    path("", api_home, name="api-home"),
     path("admin/", admin.site.urls),
     path("api/", include("expenses.urls")),
     path("api/ai/", include("ai_assistant.urls")),

@@ -6,6 +6,7 @@ from expenses.models import Budget, Transaction
 from .models import Conversation
 from .prompts import SYSTEM_PROMPT
 from .providers.gemini import GeminiProvider
+from expenses.models import Category
 
 
 def financial_context(user, month=None, year=None):
@@ -48,5 +49,14 @@ def respond(user, conversation, message, month=None, year=None):
         if conversation.pk else []
     )
     history.append({"role": "user", "content": message})
-    prompt = f"{SYSTEM_PROMPT}\n\nAuthenticated user's account context:\n{financial_context(user, month, year)}"
+    today = timezone.localdate()
+    categories = list(Category.objects.filter(owner__in=[user, None]).values_list("name", flat=True))
+    prompt = (f"{SYSTEM_PROMPT}\nToday's date is {today.isoformat()}. You may use propose_transaction or "
+              f"propose_budget only when the user clearly asks to add/create a record. These tools only prepare "
+              f"a draft; the user must confirm before anything is saved. If required details are missing, ask "
+              f"a question in text instead. Use an existing category from this list when it matches: {categories}. "
+              f"If the user explicitly asks for a new category, use that name; it will be created only after confirmation. "
+              f"For transaction dates, infer today only when the user says today or the date is clear; otherwise ask. "
+              f"For a budget, infer the current month only if the user says this month. Never claim a draft was saved.\n\n"
+              f"Authenticated user's account context:\n{financial_context(user, month, year)}")
     return GeminiProvider().generate_reply(history, prompt)

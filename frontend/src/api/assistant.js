@@ -10,6 +10,8 @@ export const sendAssistantMessage = async (message, conversationId, month, year)
   return response.data;
 };
 
+export const confirmAssistantAction = async (action) => (await api.post("ai/confirm-action/", action)).data;
+
 export const getAssistantConversations = async () => (await api.get("ai/conversations/")).data;
 
 export const getAssistantConversation = async (id) => (await api.get(`ai/conversations/${id}/`)).data;

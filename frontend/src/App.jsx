@@ -15,7 +15,7 @@ import {
   updateCategory, updateTransaction,
 } from "./api/finance";
 import { useAuth } from "./context/useAuth";
-import { createAssistantConversation, getAssistantConversation, getAssistantConversations, sendAssistantMessage } from "./api/assistant";
+import { confirmAssistantAction, createAssistantConversation, getAssistantConversation, getAssistantConversations, sendAssistantMessage } from "./api/assistant";
 import Login from "./components/Login";
 import "./App.css";
 
@@ -215,23 +215,31 @@ function FinanceWorkspace() {
     try {
       await action();
       await refresh();
+      if (modal?.kind === "agent_transaction" || modal?.kind === "agent_budget") {
+        setMessages((previous) => [...previous, { role: "assistant", content: modal.kind === "agent_transaction" ? "Transaction confirmed and saved." : "Budget confirmed and saved." }]);
+      }
       setModal(null);
     } catch (cause) {
       const data = cause.response?.data;
-      setError(data ? Object.values(data).flat().join(" ") : "That change couldn't be saved. Please try again.");
+      setError(data ? Object.values(data).flat().join(" ") : cause.message || "That change couldn't be saved. Please try again.");
     } finally { setSaving(false); }
   };
 
   const submitModal = (event) => {
     event.preventDefault();
     const data = Object.fromEntries(new FormData(event.currentTarget));
-    if (modal.kind === "transaction" || modal.kind === "candidate") {
+    if (modal.kind === "transaction" || modal.kind === "candidate" || modal.kind === "agent_transaction") {
       const body = { description: data.description.trim(), amount: data.amount, type: data.type, category: data.category ? Number(data.category) : null, transaction_date: data.transaction_date };
-      runAction(() => modal.kind === "candidate" ? createTransaction(body) : modal.item ? updateTransaction(modal.item.id, body) : createTransaction(body));
-    } else if (modal.kind === "budget") {
+      if (modal.kind === "agent_transaction") body.category_name = data.category_name.trim();
+      runAction(() => modal.kind === "agent_transaction" ? confirmAssistantAction({ type: "transaction", data: body }) : modal.kind === "candidate" ? createTransaction(body) : modal.item ? updateTransaction(modal.item.id, body) : createTransaction(body));
+    } else if (modal.kind === "budget" || modal.kind === "agent_budget") {
       runAction(async () => {
         const categoryName = data.category_name.trim();
         let category = categories.find((item) => item.name.toLowerCase() === categoryName.toLowerCase());
+        if (modal.kind === "agent_budget") {
+          const body = { category_name: categoryName, amount: data.amount, month: Number(data.month.slice(5)), year: Number(data.month.slice(0, 4)) };
+          return confirmAssistantAction({ type: "budget", data: body });
+        }
         if (!category) category = await createCategory({ name: categoryName });
         const body = { category: category.id, amount: data.amount, month: Number(data.month.slice(5)), year: Number(data.month.slice(0, 4)) };
         return modal.item ? updateBudget(modal.item.id, body) : createBudget(body);
@@ -288,6 +296,8 @@ function FinanceWorkspace() {
       const response = await sendAssistantMessage(question, conversationId, Number(selectedMonth.slice(5)), Number(selectedMonth.slice(0, 4)));
       setConversationId(response.conversation_id);
       setMessages((previous) => [...previous.filter((message) => !message.pending), response.user_message, response.message]);
+      if (response.pending_action?.type === "transaction") setModal({ kind: "agent_transaction", item: response.pending_action.data });
+      if (response.pending_action?.type === "budget") setModal({ kind: "agent_budget", item: response.pending_action.data });
       getAssistantConversations().then(setConversations).catch(() => {});
     } catch (cause) {
       setMessages((previous) => previous.filter((message) => !message.pending));
@@ -437,12 +447,12 @@ function FinanceWorkspace() {
 
       {activePage !== "AI Assistant" && <button className="fox-fab" onClick={() => setActivePage("AI Assistant")} aria-label="Open money assistant"><span className="fox-face">🌱</span></button>}
       {modal && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) setModal(null); }}><form className="transaction-modal" onSubmit={submitModal}>
-        <div className="modal-heading"><div><span className="modal-eyebrow">SPROUT</span><h2>{modal.kind === "candidate" ? "Review transaction" : modal.kind === "transaction" ? modal.item ? "Edit transaction" : "Add transaction" : modal.kind === "budget" ? modal.item ? "Edit budget" : "Create budget" : modal.item ? "Rename category" : "Add category"}</h2><p>{modal.kind === "candidate" ? "Review or correct these suggestions. Nothing is saved until you confirm." : "Your changes are saved to your account."}</p></div><button type="button" className="icon-button" aria-label="Close dialog" disabled={saving} onClick={() => setModal(null)}><X size={20} /></button></div>
+        <div className="modal-heading"><div><span className="modal-eyebrow">SPROUT</span><h2>{modal.kind === "candidate" ? "Review transaction" : modal.kind === "agent_transaction" ? "Confirm transaction" : modal.kind === "transaction" ? modal.item ? "Edit transaction" : "Add transaction" : modal.kind === "agent_budget" ? "Confirm budget" : modal.kind === "budget" ? modal.item ? "Edit budget" : "Create budget" : modal.item ? "Rename category" : "Add category"}</h2><p>{["candidate", "agent_transaction", "agent_budget"].includes(modal.kind) ? "Review or correct this draft. Nothing is saved until you confirm." : "Your changes are saved to your account."}</p></div><button type="button" className="icon-button" aria-label="Close dialog" disabled={saving} onClick={() => setModal(null)}><X size={20} /></button></div>
         {error && <p className="form-error" role="alert">{error}</p>}
-        {(modal.kind === "transaction" || modal.kind === "candidate") && <><div className="type-toggle"><label><input type="radio" name="type" value="expense" defaultChecked={modal.item?.type !== "income"} /> Expense</label><label><input type="radio" name="type" value="income" defaultChecked={modal.item?.type === "income"} /> Income</label></div><label className="form-label">Description<input name="description" required maxLength="240" defaultValue={modal.item?.description || ""} /></label><label className="form-label">Amount<input name="amount" required type="number" min="0.01" step="0.01" defaultValue={modal.item?.amount || ""} /></label><label className="form-label">Date<input name="transaction_date" required type="date" defaultValue={modal.item?.transaction_date || transactionDefaultDate} /></label><label className="form-label">Category<select name="category" defaultValue={modal.item?.category || ""}><option value="">Uncategorized</option>{categories.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label></>}
-        {modal.kind === "budget" && <><label className="form-label">Category<input name="category_name" required list="budget-categories" maxLength="60" placeholder="Type a category or choose a suggestion" defaultValue={modal.item?.category_name || ""} /><datalist id="budget-categories">{categories.map((item) => <option key={item.id} value={item.name} />)}</datalist><span className="form-hint">You can use an existing category or type a new one.</span></label><label className="form-label">Monthly limit<input name="amount" required type="number" min="0.01" step="0.01" defaultValue={modal.item?.amount || ""} /></label><label className="form-label">Month<input name="month" required type="month" defaultValue={modal.item ? `${modal.item.year}-${String(modal.item.month).padStart(2, "0")}` : selectedMonth} /></label></>}
+        {(modal.kind === "transaction" || modal.kind === "candidate" || modal.kind === "agent_transaction") && <><div className="type-toggle"><label><input type="radio" name="type" value="expense" defaultChecked={modal.item?.type !== "income"} /> Expense</label><label><input type="radio" name="type" value="income" defaultChecked={modal.item?.type === "income"} /> Income</label></div><label className="form-label">Description<input name="description" required maxLength="240" defaultValue={modal.item?.description || ""} /></label><label className="form-label">Amount<input name="amount" required type="number" min="0.01" step="0.01" defaultValue={modal.item?.amount || ""} /></label><label className="form-label">Date<input name="transaction_date" required type="date" defaultValue={modal.item?.transaction_date || transactionDefaultDate} /></label>{modal.kind === "agent_transaction" ? <label className="form-label">Category<input name="category_name" list="transaction-categories" maxLength="60" placeholder="Optional category" defaultValue={modal.item?.category_name || ""} /><datalist id="transaction-categories">{categories.map((item) => <option key={item.id} value={item.name} />)}</datalist><span className="form-hint">A new category is created when you confirm.</span></label> : <label className="form-label">Category<select name="category" defaultValue={modal.item?.category || ""}><option value="">Uncategorized</option>{categories.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>}</>}
+        {(modal.kind === "budget" || modal.kind === "agent_budget") && <><label className="form-label">Category<input name="category_name" required list="budget-categories" maxLength="60" placeholder="Type a category or choose a suggestion" defaultValue={modal.item?.category_name || ""} /><datalist id="budget-categories">{categories.map((item) => <option key={item.id} value={item.name} />)}</datalist><span className="form-hint">Choose an existing category or enter a new one. A new category is created when you confirm.</span></label><label className="form-label">Monthly limit<input name="amount" required type="number" min="0.01" step="0.01" defaultValue={modal.item?.amount || ""} /></label><label className="form-label">Month<input name="month" required type="month" defaultValue={modal.item ? `${modal.item.year}-${String(modal.item.month).padStart(2, "0")}` : selectedMonth} /></label></>}
         {modal.kind === "category" && <label className="form-label">Category name<input name="name" required maxLength="60" defaultValue={modal.item?.name || ""} /></label>}
-        <div className="modal-actions"><button type="button" className="cancel-button" onClick={() => setModal(null)} disabled={saving}>Cancel</button><button type="submit" className="primary-button" disabled={saving}>{saving ? "Saving…" : "Save"}</button></div>
+        <div className="modal-actions"><button type="button" className="cancel-button" onClick={() => setModal(null)} disabled={saving}>Cancel</button><button type="submit" className="primary-button" disabled={saving}>{saving ? "Saving…" : ["agent_transaction", "agent_budget"].includes(modal.kind) ? "Confirm and save" : "Save"}</button></div>
       </form></div>}
     </div>
   );

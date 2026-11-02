@@ -38,6 +38,7 @@ class GeminiProvider(LLMProvider):
                 "max_output_tokens": 700,
                 "thinking_level": "low",
             },
+            "tools": [{"type": "function", "name": "propose_transaction", "description": "Propose a new income or expense transaction for user review. Never execute it.", "parameters": {"type": "object", "properties": {"description": {"type": "string"}, "amount": {"type": "number"}, "type": {"type": "string", "enum": ["income", "expense"]}, "category": {"type": ["string", "null"], "description": "Existing category name or null"}, "transaction_date": {"type": "string", "description": "Date in YYYY-MM-DD format"}}, "required": ["description", "amount", "type", "transaction_date"]}}, {"type": "function", "name": "propose_budget", "description": "Propose a monthly category budget for user review. Never execute it.", "parameters": {"type": "object", "properties": {"category": {"type": "string", "description": "Existing category name"}, "amount": {"type": "number"}, "month": {"type": "integer", "minimum": 1, "maximum": 12}, "year": {"type": "integer", "minimum": 2000, "maximum": 2100}}, "required": ["category", "amount", "month", "year"]}}],
             # Sprout keeps its own authenticated history; don't persist a second
             # copy of financial prompts in Google's interaction history.
             "store": False,
@@ -51,6 +52,12 @@ class GeminiProvider(LLMProvider):
         try:
             with urlopen(request, timeout=60) as response:
                 payload = json.loads(response.read().decode("utf-8"))
+            calls = [step for step in payload.get("steps", []) if step.get("type") == "function_call"]
+            if calls:
+                call = calls[0]
+                if call.get("name") not in ("propose_transaction", "propose_budget"):
+                    raise ProviderError("Sprout proposed an unsupported action. Please rephrase your request.")
+                return {"action": call["name"], "arguments": call.get("arguments", {})}
             parts = [
                 content
                 for step in payload.get("steps", [])
@@ -61,7 +68,7 @@ class GeminiProvider(LLMProvider):
             answer = "\n".join(part.get("text", "") for part in parts).strip()
             if not answer:
                 raise ProviderError("Sprout couldn't form a reply. Please try again.")
-            return answer
+            return {"answer": answer}
         except HTTPError as exc:
             logger.warning("Gemini request failed with HTTP status %s", exc.code)
             if exc.code in (401, 403):

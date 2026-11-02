@@ -33,15 +33,20 @@ if not SECRET_KEY or SECRET_KEY == "your-django-secret-key":
         "SECRET_KEY must be configured in your .env file."
     )
 
-DEBUG = os.getenv("DEBUG", "True").lower() in ("true", "1", "yes")
+DEBUG_DEFAULT = "False" if os.getenv("VERCEL") else "True"
+DEBUG = os.getenv("DEBUG", DEBUG_DEFAULT).lower() in ("true", "1", "yes")
 
+DEFAULT_ALLOWED_HOSTS = "localhost,127.0.0.1,.vercel.app" if os.getenv("VERCEL") else "localhost,127.0.0.1"
 ALLOWED_HOSTS = [
     host.strip()
     for host in os.getenv(
-        "ALLOWED_HOSTS", "localhost,127.0.0.1"
+        "ALLOWED_HOSTS", DEFAULT_ALLOWED_HOSTS
     ).split(",")
     if host.strip()
 ]
+vercel_url = os.getenv("VERCEL_URL")
+if vercel_url and vercel_url not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append(vercel_url)
 
 
 # --------------------------------------------------
@@ -91,7 +96,7 @@ CORS_ALLOWED_ORIGINS = [
     origin.strip()
     for origin in os.getenv(
         "CORS_ALLOWED_ORIGINS",
-        "http://localhost:5173,http://127.0.0.1:5173"
+        "http://localhost:5173,http://127.0.0.1:5173,https://smart-expense-tracker-6xem.vercel.app"
     ).split(",")
     if origin.strip()
 ]

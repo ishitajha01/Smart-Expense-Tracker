@@ -2,14 +2,17 @@
 import axios from "axios";
 
 const api = axios.create({
-    baseURL: import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000/api/",
+    // Same-origin calls route to Django through Vercel's /api rewrite in
+    // production and through the Vite development proxy locally.
+    // Set VITE_API_BASE_URL when frontend and backend are deployed separately.
+    baseURL: import.meta.env.VITE_API_BASE_URL || "/api/",
     headers: { "Content-Type": "application/json" },
 });
 
 // Separate Axios instance for refreshing tokens.
 // This prevents refresh requests from triggering the same interceptor.
 const refreshClient = axios.create({
-    baseURL: "http://127.0.0.1:8000/api/",
+    baseURL: import.meta.env.VITE_API_BASE_URL || "/api/",
 });
 
 // Attach access token to outgoing requests.
